@@ -17,11 +17,12 @@ import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.IOException;
 import java.util.Date;
+import android.util.Log;
 
 /**
  * Provide methods to resize and rotate an image file.
  */
-public class ImageResizer {
+class ImageResizer {
     private final static String IMAGE_JPEG = "image/jpeg";
     private final static String IMAGE_PNG = "image/png";
     private final static String SCHEME_DATA = "data";
@@ -31,6 +32,12 @@ public class ImageResizer {
     /**
      * Resize the specified bitmap, keeping its aspect ratio.
      */
+    // 使用和微信相同的压缩算法
+    // 以1280为界限
+    // 宽高均 <= 1280，图片尺寸大小保持不变
+    // 宽高均 > 1280 && 宽高比 > 2，取较小值等于1280，较大值等比例压缩            
+    // 宽或高 > 1280 && 宽高比 <= 2，取较大值等于1280，较小值等比例压缩
+    // 宽或高 > 1280 && 宽高比 > 2 && 宽或高 < 1280，图片尺寸大小保持不变
     private static Bitmap resizeImage(Bitmap image, int maxWidth, int maxHeight) {
         Bitmap newImage = null;
         if (image == null) {
@@ -41,15 +48,34 @@ public class ImageResizer {
             float width = image.getWidth();
             float height = image.getHeight();
 
-            float ratio = Math.min((float)maxWidth / width, (float)maxHeight / height);
+            // ratio that will be used to resize the image
+            float resizeRatio;
 
-            int finalWidth = (int) (width * ratio);
-            int finalHeight = (int) (height * ratio);
-            try {
-                newImage = Bitmap.createScaledBitmap(image, finalWidth, finalHeight, true);
-            } catch (OutOfMemoryError e) {
-                return null;
+            // image width and height ratio
+            float sizeRatio = Math.max((float)width / height, (float)height / width);
+
+            if (width <= maxWidth && height <= maxHeight){
+                // 宽高均 <= 1280，图片尺寸大小保持不变
+                return image;
+            } else if (width > maxWidth && height > maxHeight && sizeRatio > 2) {
+                // 宽高均 > 1280 && 宽高比 > 2，取较小值等于1280，较大值等比例压缩
+                resizeRatio = Math.max((float)maxWidth / width, (float)maxHeight / height);
+            } else if ((width > maxWidth || height > maxHeight) && sizeRatio <= 2) {
+                // 宽或高 > 1280 && 宽高比 <= 2，取较大值等于1280，较小值等比例压缩
+                resizeRatio = Math.min((float)maxWidth / width, (float)maxHeight / height);
+            } else if (
+                ((width > maxWidth || height < maxHeight) || (width < maxWidth || height > maxHeight)) && 
+                (sizeRatio > 2)
+            ) { 
+                // 宽或高 > 1280 && 宽高比 > 2 && 宽或高 < 1280，图片尺寸大小保持不变
+                return image;
+            } else {
+                resizeRatio = Math.min((float)maxWidth / width, (float)maxHeight / height);
             }
+
+            int finalWidth = (int) (width * resizeRatio);
+            int finalHeight = (int) (height * resizeRatio);
+            newImage = Bitmap.createScaledBitmap(image, finalWidth, finalHeight, true);
         }
 
         return newImage;
@@ -64,11 +90,7 @@ public class ImageResizer {
 
         Matrix matrix = new Matrix();
         matrix.postRotate(angle);
-        try {
-            retVal = Bitmap.createBitmap(source, 0, 0, source.getWidth(), source.getHeight(), matrix, true);
-        } catch (OutOfMemoryError e) {
-            return null;
-        }
+        retVal = Bitmap.createBitmap(source, 0, 0, source.getWidth(), source.getHeight(), matrix, true);
         return retVal;
     }
 
@@ -287,15 +309,16 @@ public class ImageResizer {
             sourceImage.recycle();
         }
 
+        // commented out by Lu: remove the step of rotating
         // Rotate if necessary
-        Bitmap rotatedImage = scaledImage;
-        int orientation = getOrientation(context, imageUri);
-        rotation = orientation + rotation;
-        rotatedImage = ImageResizer.rotateImage(scaledImage, rotation);
+        // Bitmap rotatedImage = scaledImage;
+        // int orientation = getOrientation(context, imageUri);
+        // rotation = orientation + rotation;
+        // rotatedImage = ImageResizer.rotateImage(scaledImage, rotation);
 
-        if (scaledImage != rotatedImage) {
-            scaledImage.recycle();
-        }
+        // if (scaledImage != rotatedImage) {
+        //     scaledImage.recycle();
+        // }
 
         // Save the resulting image
         File path = context.getCacheDir();
@@ -303,11 +326,12 @@ public class ImageResizer {
             path = new File(outputPath);
         }
 
-        File newFile = ImageResizer.saveImage(rotatedImage, path,
+        File newFile = ImageResizer.saveImage(scaledImage, path,
                 Long.toString(new Date().getTime()), compressFormat, quality);
 
         // Clean up remaining image
-        rotatedImage.recycle();
+        // commented out by Lu: remove the step of rotating
+        // rotatedImage.recycle();
 
         return newFile;
     }
